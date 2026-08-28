@@ -1,0 +1,243 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # Safety bound against a hung/runaway step, not a speed guarantee — the
+    # first build on a cold cache genuinely takes a while because Qt6 is
+    # compiled from source (see roadmap §6.2, Phase 0 log). actions/cache
+    # below is the real lever for keeping *repeat* runs fast.
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # windows-x64-local (hardcoded D:\ toolchain path) is a personal
+          # dev-machine preset and is never used in CI.
+          - os: ubuntu-latest
+            preset: linux-x64-debug
+          - os: windows-latest
+            preset: windows-x64-debug
+          - os: macos-latest
+            preset: macos-arm64-debug
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Ninja generator does not load MSVC's cl.exe/link.exe into PATH by
+      # itself (unlike the Visual Studio generator). Without this, CMake can
+      # end up picking Git for Windows' bundled MinGW g++ instead (it's
+      # always on PATH on these runners), which mismatches the x64-windows
+      # vcpkg triplet's MSVC ABI. Windows-only; Ninja itself is installed in
+      # the next step.
+      - name: Setup MSVC environment (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install Ninja (Windows)
+        if: runner.os == 'Windows'
+        uses: seanmiddleditch/gha-setup-ninja@master
+
+      # autoconf/automake/libtool are needed because libb2 (a real
+      # transitive dependency of qtbase — confirmed by inspecting
+      # ports/libb2/portfile.cmake directly) builds via
+      # vcpkg_make_configure(AUTORECONF ...), which is not gated to skip
+      # Windows. On Windows this is a non-issue: vcpkg bootstraps its own
+      # private MSYS2 with autotools automatically for that step. On
+      # Linux/macOS it expects them already on PATH, so they're installed
+      # here explicitly rather than relying on the runner image happening
+      # to already have them.
+      # Full X11/xcb/OpenGL/EGL dev package list per Qt's own official Linux
+      # build requirements (doc.qt.io/qt-6/linux-requirements.html) — Qt's
+      # xcb platform integration and OpenGL/EGL support need these built
+      # against the actual system's X11/Mesa stack; vcpkg does not (and
+      # deliberately cannot) provide substitutes for these itself (its
+      # `opengl` port is an intentional no-op on Linux — confirmed by
+      # reading ports/opengl/portfile.cmake). All package names verified to
+      # exist on Ubuntu 24.04 (the ubuntu-latest runner's actual OS).
+      - name: Install build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ninja-build autoconf autoconf-archive automake libtool libltdl-dev \
+            libfontconfig1-dev libfreetype-dev libgtk-3-dev \
+            libx11-dev libx11-xcb-dev \
+            libxcb-cursor-dev libxcb-glx0-dev libxcb-icccm4-dev libxcb-image0-dev \
+            libxcb-keysyms1-dev libxcb-randr0-dev libxcb-render-util0-dev \
+            libxcb-shape0-dev libxcb-shm0-dev libxcb-sync-dev libxcb-util-dev \
+            libxcb-xfixes0-dev libxcb-xinput-dev libxcb-xkb-dev libxcb1-dev \
+            libxext-dev libxfixes-dev libxi-dev libxrender-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev \
+            libgl1-mesa-dev libegl1-mesa-dev
+
+      - name: Install build dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja autoconf autoconf-archive automake libtool
+
+      # Pinned to the exact commit in vcpkg.json's builtin-baseline (see
+      # roadmap §6.2) so CI and local dev always resolve the same versions.
+      # This is a FULL clone, not shallow (`--depth 1`) — vcpkg's own
+      # baseline-checkout logic runs `git show <sha>:versions/baseline.json`
+      # internally, and shallow history is a documented cause of that
+      # failing with "path exists on disk, but not in <commit>" even though
+      # the commit itself was fetched correctly (see
+      # github.com/johnwason/vcpkg-action/issues/21, where the maintainer
+      # confirmed disabling shallow fetch fixes it). Costs a few extra
+      # minutes of clone time; negligible next to the Qt6 build itself.
+      - name: Clone vcpkg (pinned to builtin-baseline commit)
+        shell: bash
+        env:
+          VCPKG_PINNED_COMMIT: a7bd30319eeac16afbe18d64a855303a0a425e84
+        run: |
+          git clone https://github.com/microsoft/vcpkg "${{ github.workspace }}/vcpkg"
+          git -C "${{ github.workspace }}/vcpkg" checkout "$VCPKG_PINNED_COMMIT"
+
+      - name: Bootstrap vcpkg (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: ${{ github.workspace }}/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+
+      - name: Bootstrap vcpkg (Windows)
+        if: runner.os == 'Windows'
+        run: ${{ github.workspace }}\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+
+      - name: Set VCPKG_ROOT
+        shell: bash
+        run: echo "VCPKG_ROOT=${{ github.workspace }}/vcpkg" >> "$GITHUB_ENV"
+
+      # vcpkg's GitHub-Actions-native binary cache (x-gha) was removed
+      # upstream (microsoft/vcpkg-tool#1662) and must not be used. This
+      # caches the whole vcpkg_installed tree via actions/cache instead --
+      # coarser than per-port caching, but it is the method the GitHub
+      # Actions team currently endorses and is enough to avoid rebuilding
+      # Qt6 from source (very slow) on every run. Cache invalidates whenever
+      # vcpkg.json changes. This is the real lever for keeping repeat CI
+      # runs short (see timeout-minutes note above).
+      - name: Cache vcpkg-built packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/vcpkg_installed
+            ${{ github.workspace }}/vcpkg/downloads
+          key: vcpkg-${{ matrix.os }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-${{ matrix.os }}-
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      # Runtime smoke test only on Linux (offscreen QPA); Windows/macOS are
+      # build-success-only in CI per roadmap §4.12/§4.13 -- runtime behavior
+      # there is verified manually (Windows) or not at all yet (macOS).
+      - name: Run under offscreen platform (Linux only)
+        if: runner.os == 'Linux'
+        run: |
+          QT_QPA_PLATFORM=offscreen ./build/${{ matrix.preset }}/bin/markdawn &
+          APP_PID=$!
+          sleep 2
+          kill -0 $APP_PID
+          kill $APP_PID
+
+  # Phase 0.5 — Technical Spikes: De-Risking Core Assumptions
+  # (Markdawn-Roadmap.md §5). Throwaway verification, kept in its own job
+  # so it never affects the cache key or timing of the main `build` job
+  # above. Only Linux + Windows: the roadmap's Phase 0.5 sign-off checklist
+  # requires Spike A's coverage check on Linux [Auto] and Spike B's build
+  # on Windows [Manual-Win]; macOS isn't a required checklist item for this
+  # phase.
+  spike-0-5:
+    name: "Phase 0.5 spikes: Markdown coverage + KSyntaxHighlighting build"
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            preset: linux-x64-debug
+          - os: windows-latest
+            preset: windows-x64-debug
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSVC environment (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install Ninja (Windows)
+        if: runner.os == 'Windows'
+        uses: seanmiddleditch/gha-setup-ninja@master
+
+      - name: Install build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ninja-build autoconf autoconf-archive automake libtool libltdl-dev \
+            libfontconfig1-dev libfreetype-dev libgtk-3-dev \
+            libx11-dev libx11-xcb-dev \
+            libxcb-cursor-dev libxcb-glx0-dev libxcb-icccm4-dev libxcb-image0-dev \
+            libxcb-keysyms1-dev libxcb-randr0-dev libxcb-render-util0-dev \
+            libxcb-shape0-dev libxcb-shm0-dev libxcb-sync-dev libxcb-util-dev \
+            libxcb-xfixes0-dev libxcb-xinput-dev libxcb-xkb-dev libxcb1-dev \
+            libxext-dev libxfixes-dev libxi-dev libxrender-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev \
+            libgl1-mesa-dev libegl1-mesa-dev
+
+      - name: Clone vcpkg (pinned to builtin-baseline commit)
+        shell: bash
+        env:
+          VCPKG_PINNED_COMMIT: a7bd30319eeac16afbe18d64a855303a0a425e84
+        run: |
+          git clone https://github.com/microsoft/vcpkg "${{ github.workspace }}/vcpkg"
+          git -C "${{ github.workspace }}/vcpkg" checkout "$VCPKG_PINNED_COMMIT"
+
+      - name: Bootstrap vcpkg (Linux)
+        if: runner.os != 'Windows'
+        run: ${{ github.workspace }}/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+
+      - name: Bootstrap vcpkg (Windows)
+        if: runner.os == 'Windows'
+        run: ${{ github.workspace }}\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+
+      - name: Set VCPKG_ROOT
+        shell: bash
+        run: echo "VCPKG_ROOT=${{ github.workspace }}/vcpkg" >> "$GITHUB_ENV"
+
+      # Separate cache key from the main `build` job's — this job installs
+      # an extra vcpkg feature (spike-syntax-highlighting) that the normal
+      # app build never needs, and both jobs must not race to write the
+      # same actions/cache key.
+      - name: Cache vcpkg-built packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/vcpkg_installed
+            ${{ github.workspace }}/vcpkg/downloads
+          key: vcpkg-spike-${{ matrix.os }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-spike-${{ matrix.os }}-
+
+      - name: Configure (spike executables ON, KSyntaxHighlighting feature enabled)
+        run: cmake --preset ${{ matrix.preset }} -DMARKDAWN_BUILD_SPIKES=ON -DVCPKG_MANIFEST_FEATURES=spike-syntax-highlighting
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      # Spike A's actual result: read this job's log for the printed
+      # toHtml() output of each construct and record pass/partial/fail
+      # per item in the roadmap's Learnings log (§6.2). This step
+      # intentionally has no pass/fail assertion of its own — see the
+      # comment at the top of spikes/markdown-coverage/main.cpp for why.
+      - name: Run Spike A - Markdown coverage (Linux only)
+        if: runner.os == 'Linux'
+        run: QT_QPA_PLATFORM=offscreen ./build/${{ matrix.preset }}/bin/markdown-coverage-spike

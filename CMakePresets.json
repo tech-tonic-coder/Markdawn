@@ -1,0 +1,95 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_INSTALLED_DIR": "${sourceDir}/build/vcpkg_installed"
+      }
+    },
+    {
+      "name": "windows-x64-debug",
+      "inherits": "base",
+      "generator": "Ninja",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "VCPKG_TARGET_TRIPLET": "x64-windows"
+      }
+    },
+    {
+      "name": "windows-x64-release",
+      "inherits": "windows-x64-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "VCPKG_TARGET_TRIPLET": "x64-windows"
+      }
+    },
+    {
+      "name": "windows-x64-relwithdebinfo",
+      "inherits": "windows-x64-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "VCPKG_TARGET_TRIPLET": "x64-windows"
+      }
+    },
+    {
+      "name": "windows-x64-local",
+      "inherits": "windows-x64-relwithdebinfo",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "D:/Projects/Tools/vcpkg/scripts/buildsystems/vcpkg.cmake"
+      }
+    },
+    {
+      "name": "macos-arm64-debug",
+      "inherits": "base",
+      "generator": "Ninja",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "VCPKG_TARGET_TRIPLET": "arm64-osx"
+      }
+    },
+    {
+      "name": "linux-x64-debug",
+      "inherits": "base",
+      "generator": "Ninja",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "VCPKG_TARGET_TRIPLET": "x64-linux"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "windows-x64-debug", "configurePreset": "windows-x64-debug" },
+    { "name": "windows-x64-local", "configurePreset": "windows-x64-local" },
+    { "name": "windows-x64-release", "configurePreset": "windows-x64-release" },
+    { "name": "windows-x64-relwithdebinfo", "configurePreset": "windows-x64-relwithdebinfo" },
+    { "name": "macos-arm64-debug", "configurePreset": "macos-arm64-debug" },
+    { "name": "linux-x64-debug", "configurePreset": "linux-x64-debug" }
+  ],
+  "testPresets": [
+    { "name": "windows-x64-debug", "configurePreset": "windows-x64-debug", "output": { "outputOnFailure": true } },
+    { "name": "windows-x64-local", "configurePreset": "windows-x64-local", "output": { "outputOnFailure": true } },
+    { "name": "windows-x64-relwithdebinfo", "configurePreset": "windows-x64-relwithdebinfo", "output": { "outputOnFailure": true } },
+    { "name": "macos-arm64-debug", "configurePreset": "macos-arm64-debug", "output": { "outputOnFailure": true } },
+    { "name": "linux-x64-debug", "configurePreset": "linux-x64-debug", "output": { "outputOnFailure": true } }
+  ]
+}

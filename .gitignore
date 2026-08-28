@@ -1,0 +1,13 @@
+# CMake build output (covers build/<preset>/ and build/vcpkg_installed/,
+# per CMakePresets.json's binaryDir/VCPKG_INSTALLED_DIR)
+/build/
+
+# Personal, machine-local preset overrides (never committed; see CMakePresets.json's
+# own windows-x64-local preset for why this project currently commits its one
+# local override directly instead of using this file — see roadmap §6.2)
+CMakeUserPresets.json
+
+# IDE / editor
+.vs/
+.vscode/
+*.user
