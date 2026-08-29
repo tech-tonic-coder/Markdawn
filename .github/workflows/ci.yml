@@ -148,15 +148,25 @@ jobs:
           kill $APP_PID
 
   # Phase 0.5 — Technical Spikes: De-Risking Core Assumptions
-  # (Markdawn-Roadmap.md §5). Throwaway verification, kept in its own job
-  # so it never affects the cache key or timing of the main `build` job
-  # above. Only Linux + Windows: the roadmap's Phase 0.5 sign-off checklist
-  # requires Spike A's coverage check on Linux [Auto] and Spike B's build
-  # on Windows [Manual-Win]; macOS isn't a required checklist item for this
-  # phase.
+  # (Markdawn-Roadmap.md §5). Throwaway verification. Only Linux + Windows:
+  # the roadmap's Phase 0.5 sign-off checklist requires Spike A's coverage
+  # check on Linux [Auto] and Spike B's build on Windows [Manual-Win];
+  # macOS isn't a required checklist item for this phase.
+  #
+  # needs: build — deliberately sequenced after the main build job, and
+  # sharing that job's exact cache key below, so this job's Windows leg
+  # reuses the qtbase/qttools binaries `build` already compiled instead of
+  # cold-rebuilding all of Qt6 a second time in parallel. The first attempt
+  # at this job did exactly that (ran in parallel with its own separate
+  # cache key) and got cancelled by its own timeout partway through
+  # rebuilding Qt from scratch a second time — see roadmap §6.2, Phase 0.5
+  # log, for the measured timings that led to this fix. actions/cache skips
+  # (does not error on) saving to a key that already exists, so both jobs
+  # safely sharing this key is fine.
   spike-0-5:
     name: "Phase 0.5 spikes: Markdown coverage + KSyntaxHighlighting build"
-    timeout-minutes: 90
+    needs: build
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -213,19 +223,21 @@ jobs:
         shell: bash
         run: echo "VCPKG_ROOT=${{ github.workspace }}/vcpkg" >> "$GITHUB_ENV"
 
-      # Separate cache key from the main `build` job's — this job installs
-      # an extra vcpkg feature (spike-syntax-highlighting) that the normal
-      # app build never needs, and both jobs must not race to write the
-      # same actions/cache key.
+      # Same cache key as the main `build` job on purpose — see the note on
+      # this job's `needs:` above. This job still adds the
+      # spike-syntax-highlighting feature on top via the configure step
+      # below; it only needs to build that one extra feature's packages
+      # (ecm, syntax-highlighting) once qtbase/qttools are already restored
+      # from cache, rather than rebuilding everything.
       - name: Cache vcpkg-built packages
         uses: actions/cache@v4
         with:
           path: |
             build/vcpkg_installed
             ${{ github.workspace }}/vcpkg/downloads
-          key: vcpkg-spike-${{ matrix.os }}-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-${{ matrix.os }}-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
-            vcpkg-spike-${{ matrix.os }}-
+            vcpkg-${{ matrix.os }}-
 
       - name: Configure (spike executables ON, KSyntaxHighlighting feature enabled)
         run: cmake --preset ${{ matrix.preset }} -DMARKDAWN_BUILD_SPIKES=ON -DVCPKG_MANIFEST_FEATURES=spike-syntax-highlighting
