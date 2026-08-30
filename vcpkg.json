@@ -5,13 +5,5 @@
   "dependencies": [
     "qtbase",
     "nlohmann-json"
-  ],
-  "features": {
-    "spike-syntax-highlighting": {
-      "description": "Phase 0.5, Spike B (throwaway): verify the KSyntaxHighlighting KF6 port builds on all target triplets before Phase 8 depends on it. Not enabled by default; CI's spike job passes -DVCPKG_MANIFEST_FEATURES=spike-syntax-highlighting. NOTE: the correct vcpkg port name is \"syntax-highlighting\", not \"ksyntaxhighlighting\"/\"kf6syntaxhighlighting\" (verified against the pinned builtin-baseline commit — see roadmap §6.2).",
-      "dependencies": [
-        "syntax-highlighting"
-      ]
-    }
-  }
+  ]
 }

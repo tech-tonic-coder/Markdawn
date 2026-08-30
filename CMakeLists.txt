@@ -30,14 +30,3 @@ add_subdirectory(markdawn-app)
 
 # tests/ is intentionally not added yet — no test target exists until a
 # later phase writes the first one (see tests/README.md).
-
-# Phase 0.5 — throwaway technical-spike executables (Markdawn-Roadmap.md
-# §5, Phase 0.5). OFF by default so spikes never affect the normal app
-# build; CI turns this ON only in the dedicated spike job. Do not extend
-# spikes/ into real product code — once a spike's question is answered and
-# recorded in the roadmap's Learnings log, the spike directory itself can
-# be deleted.
-option(MARKDAWN_BUILD_SPIKES "Build throwaway Phase 0.5 technical-spike executables" OFF)
-if(MARKDAWN_BUILD_SPIKES)
-    add_subdirectory(spikes/markdown-coverage)
-endif()
