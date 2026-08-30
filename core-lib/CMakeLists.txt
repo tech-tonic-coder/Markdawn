@@ -1,16 +1,41 @@
-# Phase 0: placeholder library so the two-target architecture (§2.1) exists
-# and links correctly before any real module (document/, ipc/, settings/,
-# highlighting/, logging/) has content. src/version.cpp is removed once
-# Phase 1 adds the first real source file.
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Network)
+find_package(nlohmann_json REQUIRED)
+
+# Phase 1: first real modules (document/, ipc/) replace the Phase 0
+# placeholder (version.cpp) that only proved the two-target link worked.
+#
+# Headers with Q_OBJECT (document_model.h, single_instance_coordinator.h)
+# are listed here alongside their .cpp files deliberately: CMAKE_AUTOMOC
+# only moc's a header when it's part of the target's own SOURCES list (or
+# shares a source's basename in the same directory) -- a header merely
+# #included from a .cpp in a different directory is not enough, and silently
+# produces an empty mocs_compilation.cpp (verified locally; see roadmap
+# §6.2 Phase 1 log).
 add_library(markdawncore STATIC
-    src/version.cpp
+    include/markdawncore/document/document_model.h
+    src/document/document_model.cpp
+    include/markdawncore/ipc/single_instance_coordinator.h
+    src/ipc/ipc_message.cpp
+    src/ipc/single_instance_coordinator.cpp
 )
 
 target_include_directories(markdawncore PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_link_libraries(markdawncore PRIVATE markdawn_warnings)
+# PUBLIC: public headers under include/markdawncore/ (document_model.h,
+# single_instance_coordinator.h) include Qt types directly, so consumers
+# (markdawn-app) need these include paths/link flags too, not just this
+# library's own .cpp files.
+target_link_libraries(markdawncore
+    PUBLIC
+        Qt6::Core
+        Qt6::Gui
+        Qt6::Network
+    PRIVATE
+        nlohmann_json::nlohmann_json
+        markdawn_warnings
+)
 
 set_target_properties(markdawncore PROPERTIES
     CXX_STANDARD 20

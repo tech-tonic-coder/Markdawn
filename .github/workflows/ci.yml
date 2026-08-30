@@ -135,15 +135,51 @@ jobs:
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }}
 
-      # Runtime smoke test only on Linux (offscreen QPA); Windows/macOS are
-      # build-success-only in CI per roadmap §4.12/§4.13 -- runtime behavior
-      # there is verified manually (Windows) or not at all yet (macOS).
+      # Phase 1 single-instance/IPC smoke test, Linux only (offscreen QPA);
+      # Windows repeats this manually per roadmap §5 Phase 1 ("How to
+      # verify") since QLocalServer/QLocalSocket use a named pipe there
+      # instead of a Unix domain socket -- different enough at the OS level
+      # not to assume identical to this Linux run. macOS stays
+      # build-success-only per §4.13.
       - name: Run under offscreen platform (Linux only)
         if: runner.os == 'Linux'
+        shell: bash
         run: |
-          QT_QPA_PLATFORM=offscreen ./build/${{ matrix.preset }}/bin/markdawn &
-          APP_PID=$!
-          sleep 2
-          kill -0 $APP_PID
-          kill $APP_PID
+          set -euo pipefail
+          BIN=./build/${{ matrix.preset }}/bin/markdawn
+          export QT_QPA_PLATFORM=offscreen
+          echo "# CI test file A" > /tmp/ci_file_a.md
+          echo "# CI test file B" > /tmp/ci_file_b.md
+
+          # 1) Fresh launch starts normally and loads its file.
+          "$BIN" /tmp/ci_file_a.md > /tmp/instance1.log 2>&1 &
+          INSTANCE1_PID=$!
+          sleep 1
+          kill -0 "$INSTANCE1_PID"
+          grep -q "loaded \"/tmp/ci_file_a.md\"" /tmp/instance1.log
+
+          # 2) A second launch hands off and exits almost immediately.
+          START_NS=$(date +%s%N)
+          timeout 5 "$BIN" /tmp/ci_file_b.md
+          END_NS=$(date +%s%N)
+          ELAPSED_MS=$(( (END_NS - START_NS) / 1000000 ))
+          echo "second-instance handoff took ${ELAPSED_MS} ms"
+          if [ "$ELAPSED_MS" -ge 1000 ]; then
+            echo "::error::second-instance handoff took ${ELAPSED_MS} ms, expected well under the 50ms target"
+            exit 1
+          fi
+
+          # 3) The first instance's log shows the handoff arriving.
+          sleep 0.5
+          grep -q "received OpenFile via IPC: \"/tmp/ci_file_b.md\"" /tmp/instance1.log
+
+          # 4) Force-kill (simulating a crash) then relaunch cleanly.
+          kill -9 "$INSTANCE1_PID"
+          sleep 0.5
+          "$BIN" /tmp/ci_file_a.md > /tmp/instance2.log 2>&1 &
+          INSTANCE2_PID=$!
+          sleep 1
+          kill -0 "$INSTANCE2_PID"
+          grep -q "single-instance server listening" /tmp/instance2.log
+          kill "$INSTANCE2_PID"
 
