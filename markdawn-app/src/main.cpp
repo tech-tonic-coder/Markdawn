@@ -1,14 +1,15 @@
 #include <QApplication>
 #include <QCoreApplication>
 #include <QDebug>
-#include <QMainWindow>
+#include <QFileInfo>
 #include <QString>
 
-#include "markdawncore/document/document_model.h"
+#include "main_window/main_window.h"
 #include "markdawncore/ipc/single_instance_coordinator.h"
+#include "tab_manager/tab_manager.h"
 
-using markdawn::core::DocumentModel;
-using markdawn::core::LoadResult;
+using markdawn::app::MainWindow;
+using markdawn::app::TabManager;
 using markdawn::core::SingleInstanceServer;
 using markdawn::core::tryForwardToRunningInstance;
 
@@ -30,7 +31,18 @@ QString firstFileArgument(int argc, char* argv[]) {
 } // namespace
 
 int main(int argc, char* argv[]) {
-    const QString filePath = firstFileArgument(argc, argv);
+    QString filePath = firstFileArgument(argc, argv);
+
+    // Resolve to an absolute path immediately, before the fast-forward
+    // check. A relative path is meaningless once it crosses a process
+    // boundary: the IPC message (§5 Phase 1) is sent by this process but
+    // opened by whichever instance ends up owning the window, which may
+    // have a different working directory than this one (roadmap §6.2
+    // Phase 2 log -- this was a real gap in Phase 1's IPC path once file
+    // opening became real in Phase 2, not a hypothetical one).
+    if (!filePath.isEmpty()) {
+        filePath = QFileInfo(filePath).absoluteFilePath();
+    }
 
     // Fast path (§5 Phase 1: "no QApplication construction, no
     // theme/resource loading, just connect, send, exit"): a QCoreApplication
@@ -47,31 +59,22 @@ int main(int argc, char* argv[]) {
 
     QApplication app(argc, argv);
 
-    QMainWindow window;
-    window.setWindowTitle(QStringLiteral("Markdawn"));
-    window.resize(800, 600);
+    MainWindow window;
 
     SingleInstanceServer server;
     if (!server.start()) {
         qWarning() << "markdawn: single-instance server did not start;"
                    << "later launches may open extra windows until this one is closed.";
     }
-    QObject::connect(&server, &SingleInstanceServer::openFileRequested, &window,
-                      [](const QString& path) {
-                          // Phase 2's TabManager consumes this signal for real; Phase 1
-                          // only needs to prove the message arrives (§5's "How to verify").
-                          qInfo() << "markdawn: OpenFile received via IPC for" << path;
-                      });
+    // Direct connection to TabManager, replacing Phase 1's log-only
+    // placeholder lambda (roadmap §6.2 Phase 1 log: "Phase 2's TabManager
+    // should connect to SingleInstanceServer::openFileRequested in place of
+    // the placeholder lambda in main.cpp").
+    QObject::connect(&server, &SingleInstanceServer::openFileRequested, window.tabManager(),
+                      &TabManager::openFile);
 
     if (!filePath.isEmpty()) {
-        auto* model = new DocumentModel(&window);
-        const LoadResult result = model->loadFromFile(filePath);
-        if (result == LoadResult::Ok) {
-            qInfo() << "markdawn: loaded" << filePath << "(" << model->textDocument()->characterCount()
-                   << "characters )";
-        } else {
-            qWarning() << "markdawn: failed to load" << filePath;
-        }
+        window.tabManager()->openFile(filePath);
     }
 
     window.show();

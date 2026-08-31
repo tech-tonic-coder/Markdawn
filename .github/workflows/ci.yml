@@ -156,7 +156,7 @@ jobs:
           INSTANCE1_PID=$!
           sleep 1
           kill -0 "$INSTANCE1_PID"
-          grep -q "loaded \"/tmp/ci_file_a.md\"" /tmp/instance1.log
+          grep -q "opened new tab for \"/tmp/ci_file_a.md\"" /tmp/instance1.log
 
           # 2) A second launch hands off and exits almost immediately.
           START_NS=$(date +%s%N)
@@ -169,12 +169,46 @@ jobs:
             exit 1
           fi
 
-          # 3) The first instance's log shows the handoff arriving.
+          # 3) The first instance's log shows the handoff arriving and file B
+          # opened as a second tab (Phase 2: several files opened via
+          # argv/IPC each become their own tab).
           sleep 0.5
           grep -q "received OpenFile via IPC: \"/tmp/ci_file_b.md\"" /tmp/instance1.log
+          grep -q "opened new tab for \"/tmp/ci_file_b.md\" ( 2 tab(s) total )" /tmp/instance1.log
 
-          # 4) Force-kill (simulating a crash) then relaunch cleanly.
-          kill -9 "$INSTANCE1_PID"
+          # 4) Phase 2: re-opening file A's path must focus the existing tab,
+          # not create a third one.
+          timeout 5 "$BIN" /tmp/ci_file_a.md
+          sleep 0.5
+          grep -q "focusing already-open tab for \"/tmp/ci_file_a.md\"" /tmp/instance1.log
+          if grep -q "opened new tab for \"/tmp/ci_file_a.md\" ( 3 tab(s) total )" /tmp/instance1.log; then
+            echo "::error::re-opening an already-open file created a duplicate tab instead of focusing it"
+            exit 1
+          fi
+
+          # 5) Phase 2: a nonexistent path must show a clear in-tab error
+          # state, not crash the running instance.
+          timeout 5 "$BIN" /tmp/ci_nonexistent.md
+          sleep 0.5
+          kill -0 "$INSTANCE1_PID"
+          grep -q "showing in-tab error state for \"/tmp/ci_nonexistent.md\" - \"File not found\"" /tmp/instance1.log
+
+          # 6) Phase 2: relative-image-path resolution logic -- confirm the
+          # base URL DocumentView sets matches the file's own directory
+          # (headless path-resolution check; the roadmap explicitly scopes
+          # actual visual image rendering to [Manual-Win], not this check).
+          mkdir -p /tmp/ci_image_test
+          printf 'binary-placeholder' > /tmp/ci_image_test/pic.png
+          printf '# Image test\n\n![alt](pic.png)\n' > /tmp/ci_image_test/with_image.md
+          timeout 5 "$BIN" /tmp/ci_image_test/with_image.md
+          sleep 0.5
+          grep -q "DocumentView base URL set to \"file:///tmp/ci_image_test/with_image.md\" for \"/tmp/ci_image_test/with_image.md\"" /tmp/instance1.log
+
+          kill "$INSTANCE1_PID"
+
+          # 7) Force-kill (simulating a crash) then relaunch cleanly --
+          # unrelated to Phase 2, re-checked here only because it must keep
+          # passing as new phases land on top of Phase 1's IPC layer.
           sleep 0.5
           "$BIN" /tmp/ci_file_a.md > /tmp/instance2.log 2>&1 &
           INSTANCE2_PID=$!

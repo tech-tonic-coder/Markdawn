@@ -1,7 +1,26 @@
 find_package(Qt6 REQUIRED COMPONENTS Widgets)
 
+# Phase 2: DocumentView/TabManager/MainWindow are markdawn-app's first real
+# Q_OBJECT classes (§5 Phase 2). Unlike core-lib's include/ vs src/ split,
+# each header lives alongside its .cpp in the same directory here, so
+# CMAKE_AUTOMOC's same-directory/same-basename detection should already
+# find them without help -- but every Q_OBJECT header is still listed
+# explicitly below anyway, matching core-lib's convention (see roadmap
+# §6.2 Phase 1 log's CMake/AUTOMOC gotcha): explicit listing is always
+# safe and costs nothing, so there is no reason to depend on the implicit
+# case working correctly.
 add_executable(markdawn
     src/main.cpp
+    src/document_view/document_view.h
+    src/document_view/document_view.cpp
+    src/tab_manager/tab_manager.h
+    src/tab_manager/tab_manager.cpp
+    src/main_window/main_window.h
+    src/main_window/main_window.cpp
+)
+
+target_include_directories(markdawn PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
 target_link_libraries(markdawn PRIVATE
@@ -55,3 +74,4 @@ endif()
 # WIN32_EXECUTABLE (no console window) is deliberately not set yet — Phase 0
 # wants console/qDebug output visible while bringing the app up. Revisit in
 # Phase 12 packaging once logging (§4.11) is the primary diagnostic channel.
+
