@@ -5,11 +5,13 @@
 namespace markdawn::app {
 
 class TabManager;
+class TocPanel;
 
-// Owns the tab manager, the File > Open action, and drag-and-drop handling
-// (§5 Phase 2). All three ways of opening a file funnel into
-// TabManager::openFile() -- this class does no file I/O or Markdown
-// handling itself.
+// Owns the tab manager, the TOC dock panel (§5 Phase 3), the File > Open
+// action, and drag-and-drop handling (§5 Phase 2). All three ways of
+// opening a file funnel into TabManager::openFile() -- this class does no
+// file I/O, Markdown handling, or heading extraction itself; it only wires
+// TabManager's activeDocumentChanged straight through to TocPanel.
 class MainWindow : public QMainWindow {
     Q_OBJECT
 public:
@@ -29,6 +31,7 @@ private slots:
 
 private:
     TabManager* m_tabManager = nullptr;
+    TocPanel* m_tocPanel = nullptr;
 };
 
 } // namespace markdawn::app

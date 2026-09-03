@@ -135,6 +135,14 @@ jobs:
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }}
 
+      # Phase 3's two [Auto] checks (nested-heading hierarchy; explicit
+      # empty state for a heading-less document) are both headless TocModel
+      # unit tests with no GUI and no platform-specific behavior, so this
+      # runs on every matrix leg rather than being gated to Linux like the
+      # offscreen app smoke test below.
+      - name: Run tests (ctest)
+        run: ctest --preset ${{ matrix.preset }}
+
       # Phase 1 single-instance/IPC smoke test, Linux only (offscreen QPA);
       # Windows repeats this manually per roadmap §5 Phase 1 ("How to
       # verify") since QLocalServer/QLocalSocket use a named pipe there

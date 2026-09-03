@@ -4,16 +4,21 @@ find_package(nlohmann_json REQUIRED)
 # Phase 1: first real modules (document/, ipc/) replace the Phase 0
 # placeholder (version.cpp) that only proved the two-target link worked.
 #
-# Headers with Q_OBJECT (document_model.h, single_instance_coordinator.h)
-# are listed here alongside their .cpp files deliberately: CMAKE_AUTOMOC
-# only moc's a header when it's part of the target's own SOURCES list (or
-# shares a source's basename in the same directory) -- a header merely
-# #included from a .cpp in a different directory is not enough, and silently
-# produces an empty mocs_compilation.cpp (verified locally; see roadmap
-# §6.2 Phase 1 log).
+# Headers with Q_OBJECT (document_model.h, single_instance_coordinator.h,
+# and Phase 3's toc_model.h) are listed here alongside their .cpp files
+# deliberately: CMAKE_AUTOMOC only moc's a header when it's part of the
+# target's own SOURCES list (or shares a source's basename in the same
+# directory) -- a header merely #included from a .cpp in a different
+# directory is not enough, and silently produces an empty
+# mocs_compilation.cpp (verified locally; see roadmap §6.2 Phase 1 log).
+# heading_slug.h has no Q_OBJECT, so -- like ipc_message.h -- it does not
+# need to be listed here; only its .cpp does.
 add_library(markdawncore STATIC
     include/markdawncore/document/document_model.h
     src/document/document_model.cpp
+    include/markdawncore/document/toc_model.h
+    src/document/toc_model.cpp
+    src/document/heading_slug.cpp
     include/markdawncore/ipc/single_instance_coordinator.h
     src/ipc/ipc_message.cpp
     src/ipc/single_instance_coordinator.cpp

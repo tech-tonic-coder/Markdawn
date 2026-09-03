@@ -6,15 +6,18 @@
 
 #include "document_view/document_view.h"
 #include "markdawncore/document/document_model.h"
+#include "markdawncore/document/toc_model.h"
 
 using markdawn::core::DocumentModel;
 using markdawn::core::LoadResult;
+using markdawn::core::TocModel;
 
 namespace markdawn::app {
 
 TabManager::TabManager(QWidget* parent) : QTabWidget(parent) {
     setTabsClosable(true);
     connect(this, &QTabWidget::tabCloseRequested, this, &TabManager::closeTabAt);
+    connect(this, &QTabWidget::currentChanged, this, &TabManager::handleCurrentChanged);
 }
 
 void TabManager::openFile(const QString& filePath) {
@@ -27,10 +30,10 @@ void TabManager::openFile(const QString& filePath) {
     // path and the duplicate-tab map key.
     const QString normalizedPath = QFileInfo(filePath).absoluteFilePath();
 
-    const auto existing = m_openPaths.constFind(normalizedPath);
-    if (existing != m_openPaths.constEnd()) {
+    const auto existing = m_openTabs.constFind(normalizedPath);
+    if (existing != m_openTabs.constEnd()) {
         qInfo() << "markdawn: focusing already-open tab for" << normalizedPath;
-        setCurrentWidget(existing.value());
+        setCurrentWidget(existing.value().view);
         return;
     }
 
@@ -38,6 +41,12 @@ void TabManager::openFile(const QString& filePath) {
     const LoadResult result = model->loadFromFile(normalizedPath);
 
     auto* view = new DocumentView(this);
+    // Owned by TabManager (this), not by view -- see the class comment in
+    // tab_manager.h for why. Given a DocumentModel unconditionally, on both
+    // the success and error-tab paths below: on the error path the model's
+    // document is empty, so the TOC panel correctly falls back to its "no
+    // headings" state on its own, with no separate branch needed here.
+    auto* tocModel = new TocModel(this);
     const QString label = QFileInfo(normalizedPath).fileName();
     int index = -1;
 
@@ -51,10 +60,16 @@ void TabManager::openFile(const QString& filePath) {
         setTabIcon(index, style()->standardIcon(QStyle::SP_MessageBoxWarning));
         qWarning() << "markdawn: opened error tab for" << normalizedPath;
     }
+    tocModel->setDocumentModel(model);
 
     setTabToolTip(index, normalizedPath);
+    // Insert into the map *before* setCurrentIndex(): setCurrentIndex()
+    // emits currentChanged() synchronously when the index actually changes
+    // (true for the very first tab, going from -1 to 0), which runs
+    // handleCurrentChanged() immediately -- that lookup would miss this tab
+    // if the map entry weren't already there.
+    m_openTabs.insert(normalizedPath, {view, tocModel});
     setCurrentIndex(index);
-    m_openPaths.insert(normalizedPath, view);
 }
 
 void TabManager::closeTabAt(int index) {
@@ -66,14 +81,33 @@ void TabManager::closeTabAt(int index) {
     // for this widget is simpler than maintaining a second, reverse-keyed
     // map just for removal, and is cheap at the tab counts this app deals
     // with.
-    for (auto it = m_openPaths.begin(); it != m_openPaths.end(); ++it) {
-        if (it.value() == page) {
-            m_openPaths.erase(it);
+    for (auto it = m_openTabs.begin(); it != m_openTabs.end(); ++it) {
+        if (it.value().view == page) {
+            it.value().tocModel->deleteLater();
+            m_openTabs.erase(it);
             break;
         }
     }
     removeTab(index);
     page->deleteLater();
+}
+
+void TabManager::handleCurrentChanged(int index) {
+    if (index < 0) {
+        emit activeDocumentChanged(nullptr, nullptr);
+        return;
+    }
+    QWidget* page = widget(index);
+    for (auto it = m_openTabs.constBegin(); it != m_openTabs.constEnd(); ++it) {
+        if (it.value().view == page) {
+            emit activeDocumentChanged(it.value().tocModel, it.value().view);
+            return;
+        }
+    }
+    // Should not happen -- every tab widget is inserted into m_openTabs
+    // before setCurrentIndex() can trigger this slot -- but fail safe
+    // rather than emit a signal referencing a widget we have no record of.
+    emit activeDocumentChanged(nullptr, nullptr);
 }
 
 } // namespace markdawn::app

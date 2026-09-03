@@ -5,30 +5,9 @@
 #include <QTextCursor>
 #include <QTextDocument>
 
+#include "markdawncore/document/heading_slug.h"
+
 namespace markdawn::app {
-
-namespace {
-
-// Approximates GitHub's heading-slug algorithm: lowercase; spaces become
-// hyphens; anything that isn't a letter, digit, hyphen or underscore is
-// dropped. Known, accepted limitation (roadmap §6.2 Phase 2 log): this does
-// not disambiguate duplicate headings the way GitHub appends "-1", "-2",
-// etc., and it does not replicate GitHub's exact Unicode/emoji handling --
-// sufficient for the ASCII-heading case this project's own test files use.
-QString slugify(const QString& headingText) {
-    QString out;
-    out.reserve(headingText.size());
-    for (const QChar& c : headingText.toLower()) {
-        if (c.isLetterOrNumber() || c == QLatin1Char('-') || c == QLatin1Char('_')) {
-            out += c;
-        } else if (c.isSpace()) {
-            out += QLatin1Char('-');
-        }
-    }
-    return out;
-}
-
-} // namespace
 
 DocumentView::DocumentView(QWidget* parent) : QTextBrowser(parent) {
     // We handle every link ourselves (see handleAnchorClicked) rather than
@@ -77,7 +56,7 @@ void DocumentView::rebuildHeadingIndex() {
     m_headingSlugs.clear();
     for (QTextBlock block = document()->begin(); block.isValid(); block = block.next()) {
         if (block.blockFormat().headingLevel() > 0) {
-            m_headingSlugs.insert(slugify(block.text()), block);
+            m_headingSlugs.insert(markdawn::core::slugifyHeading(block.text()), block);
         }
     }
 }

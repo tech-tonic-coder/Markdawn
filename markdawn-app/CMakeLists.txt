@@ -15,6 +15,8 @@ add_executable(markdawn
     src/document_view/document_view.cpp
     src/tab_manager/tab_manager.h
     src/tab_manager/tab_manager.cpp
+    src/toc_panel/toc_panel.h
+    src/toc_panel/toc_panel.cpp
     src/main_window/main_window.h
     src/main_window/main_window.cpp
 )

@@ -28,5 +28,7 @@ endif()
 add_subdirectory(core-lib)
 add_subdirectory(markdawn-app)
 
-# tests/ is intentionally not added yet — no test target exists until a
-# later phase writes the first one (see tests/README.md).
+# Phase 3 is the first phase with a genuine headless unit test (TocModel's
+# hierarchy-building logic), so tests/ is wired in starting here.
+enable_testing()
+add_subdirectory(tests/core-lib)

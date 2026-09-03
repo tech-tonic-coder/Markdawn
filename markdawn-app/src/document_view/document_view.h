@@ -36,8 +36,9 @@ public:
     void showLoadError(markdawn::core::LoadResult result, const QString& filePath);
 
 public slots:
-    // Scrolls to the heading whose slug matches slug (see slugify() in the
-    // .cpp). Public so Phase 3's TOC panel can drive navigation through the
+    // Scrolls to the heading whose slug matches slug (see
+    // markdawncore/document/heading_slug.h for how the slug is computed).
+    // Public so the TOC panel (§5 Phase 3) can drive navigation through the
     // same lookup this class already builds for internal anchor links --
     // no separate mechanism needs writing later.
     void scrollToHeadingSlug(const QString& slug);
