@@ -24,6 +24,22 @@ TocPanel::TocPanel(QWidget* parent) : QWidget(parent) {
 
     m_treeView = new QTreeView(this);
     m_treeView->setHeaderHidden(true);
+    // The outline is always shown fully expanded (see updateEmptyState()'s
+    // expandAll()) and never collapsed by the user, so the default +/-
+    // branch indicator Qt draws for every heading that has sub-headings
+    // serves no purpose here -- it only adds visual noise next to headings
+    // that happen to have children. Removing it is Qt's own documented
+    // technique for controlling branch decoration (Qt's "Customizing
+    // QTreeView" docs use exactly this "branch { image: none; }" pattern),
+    // not a fragile custom-paint workaround, and it's scoped to this one
+    // QTreeView rather than a global stylesheet, so it doesn't affect any
+    // other widget's native look.
+    m_treeView->setStyleSheet(QStringLiteral("QTreeView::branch { border-image: none; image: none; }"));
+    // Disabled to match: with the indicator gone, a still-active
+    // double-click-to-collapse would silently hide a heading's children
+    // with no visual cue why -- confusing rather than useful given the
+    // tree is meant to always show the full outline.
+    m_treeView->setItemsExpandable(false);
     // "Clicking a node scrolls..." (§5 Phase 3) -- clicked is the direct
     // single-click signal; activated is deliberately not also connected,
     // since on some styles it fires on the same single click and would
