@@ -15,4 +15,13 @@ QString slugifyHeading(const QString& headingText) {
     return out;
 }
 
+QString HeadingSlugDisambiguator::nextSlug(const QString& headingText) {
+    const QString base = slugifyHeading(headingText);
+    int& count = m_seenCounts[base];
+    const QString result =
+        (count == 0) ? base : (base + QLatin1Char('-') + QString::number(count));
+    ++count;
+    return result;
+}
+
 } // namespace markdawn::core

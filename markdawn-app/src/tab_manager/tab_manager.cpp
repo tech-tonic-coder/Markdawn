@@ -47,28 +47,38 @@ void TabManager::openFile(const QString& filePath) {
     // document is empty, so the TOC panel correctly falls back to its "no
     // headings" state on its own, with no separate branch needed here.
     auto* tocModel = new TocModel(this);
-    const QString label = QFileInfo(normalizedPath).fileName();
-    int index = -1;
 
     if (result == LoadResult::Ok) {
         view->loadFromModel(model);
-        index = addTab(view, label);
-        qInfo() << "markdawn: opened new tab for" << normalizedPath << "(" << count() << "tab(s) total )";
     } else {
         view->showLoadError(result, normalizedPath);
-        index = addTab(view, label);
-        setTabIcon(index, style()->standardIcon(QStyle::SP_MessageBoxWarning));
-        qWarning() << "markdawn: opened error tab for" << normalizedPath;
     }
     tocModel->setDocumentModel(model);
 
-    setTabToolTip(index, normalizedPath);
-    // Insert into the map *before* setCurrentIndex(): setCurrentIndex()
-    // emits currentChanged() synchronously when the index actually changes
-    // (true for the very first tab, going from -1 to 0), which runs
-    // handleCurrentChanged() immediately -- that lookup would miss this tab
-    // if the map entry weren't already there.
+    // Insert into the map *before* addTab()/setCurrentIndex(): both can
+    // fire currentChanged() synchronously -- setCurrentIndex() whenever the
+    // index actually changes, and addTab() itself for the very first tab
+    // ever added (index goes from -1 to 0 as part of that call, not a
+    // separate later one). A real bug shipped from missing the addTab()
+    // case: the earlier fix only moved the insert ahead of
+    // setCurrentIndex(), which fixed every tab after the first, but the
+    // first tab's addTab() call still fired currentChanged() while the map
+    // was still empty, so handleCurrentChanged() fell through to its "not
+    // found" fallback and emitted (nullptr, nullptr) -- an empty TOC that
+    // only became correct once the user switched away and back, which is
+    // exactly the reported symptom. Both trigger points are covered now by
+    // inserting before either can fire.
     m_openTabs.insert(normalizedPath, {view, tocModel});
+
+    const QString label = QFileInfo(normalizedPath).fileName();
+    const int index = addTab(view, label);
+    if (result == LoadResult::Ok) {
+        qInfo() << "markdawn: opened new tab for" << normalizedPath << "(" << count() << "tab(s) total )";
+    } else {
+        setTabIcon(index, style()->standardIcon(QStyle::SP_MessageBoxWarning));
+        qWarning() << "markdawn: opened error tab for" << normalizedPath;
+    }
+    setTabToolTip(index, normalizedPath);
     setCurrentIndex(index);
 }
 
@@ -105,8 +115,10 @@ void TabManager::handleCurrentChanged(int index) {
         }
     }
     // Should not happen -- every tab widget is inserted into m_openTabs
-    // before setCurrentIndex() can trigger this slot -- but fail safe
-    // rather than emit a signal referencing a widget we have no record of.
+    // before either addTab() or setCurrentIndex() runs in openFile(), and
+    // those are the only two calls that can trigger this slot -- but fail
+    // safe rather than emit a signal referencing a widget we have no
+    // record of.
     emit activeDocumentChanged(nullptr, nullptr);
 }
 

@@ -54,9 +54,12 @@ void DocumentView::showLoadError(markdawn::core::LoadResult result, const QStrin
 
 void DocumentView::rebuildHeadingIndex() {
     m_headingSlugs.clear();
+    // Fresh per rebuild -- see HeadingSlugDisambiguator's class comment for
+    // why that's correct here rather than a shortcut.
+    markdawn::core::HeadingSlugDisambiguator disambiguator;
     for (QTextBlock block = document()->begin(); block.isValid(); block = block.next()) {
         if (block.blockFormat().headingLevel() > 0) {
-            m_headingSlugs.insert(markdawn::core::slugifyHeading(block.text()), block);
+            m_headingSlugs.insert(disambiguator.nextSlug(block.text()), block);
         }
     }
 }

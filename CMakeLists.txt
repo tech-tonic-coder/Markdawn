@@ -32,3 +32,4 @@ add_subdirectory(markdawn-app)
 # hierarchy-building logic), so tests/ is wired in starting here.
 enable_testing()
 add_subdirectory(tests/core-lib)
+add_subdirectory(tests/markdawn-app)

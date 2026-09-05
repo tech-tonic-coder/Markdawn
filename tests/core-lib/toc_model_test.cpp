@@ -159,6 +159,33 @@ int main(int argc, char** argv) {
         check(toc.rowCount(toc.index(0, 0)) == 1, "live-edit doc: new child picked up after edit");
     }
 
+    // --- Duplicate headings get disambiguated slugs, matching GitHub's
+    // --- own "-1", "-2", ... behavior (added after comparing against a
+    // --- reference implementation; see roadmap §6.2 Phase 3 log) ---
+    {
+        DocumentModel doc;
+        doc.textDocument()->setPlainText(
+            "# Overview\n"
+            "text\n"
+            "## Background\n"
+            "text\n"
+            "## Background\n"
+            "text\n"
+            "## Background\n"
+            "text\n");
+        TocModel toc;
+        toc.setDocumentModel(&doc);
+
+        const QModelIndex overviewIndex = toc.index(0, 0);
+        check(toc.rowCount(overviewIndex) == 3, "duplicate-heading doc: 3 Background children");
+        check(toc.data(toc.index(0, 0, overviewIndex), kTocSlugRole).toString() == "background",
+              "duplicate-heading doc: 1st Background keeps the plain slug");
+        check(toc.data(toc.index(1, 0, overviewIndex), kTocSlugRole).toString() == "background-1",
+              "duplicate-heading doc: 2nd Background gets \"-1\"");
+        check(toc.data(toc.index(2, 0, overviewIndex), kTocSlugRole).toString() == "background-2",
+              "duplicate-heading doc: 3rd Background gets \"-2\"");
+    }
+
     if (g_failures == 0) {
         std::cout << "All TocModel tests passed.\n";
         return 0;

@@ -70,6 +70,10 @@ void TocModel::rebuild() {
         // H1 -- no synthesized placeholder H2 is invented, verified via a
         // standalone probe against this exact case before writing this).
         std::vector<Node*> stack{m_root.get()};
+        // Fresh per rebuild, matching DocumentView::rebuildHeadingIndex() --
+        // see HeadingSlugDisambiguator's class comment for why a fresh
+        // instance per full scan is correct here, not a shortcut.
+        HeadingSlugDisambiguator disambiguator;
         for (QTextBlock block = m_renderDocument.begin(); block.isValid(); block = block.next()) {
             const int level = block.blockFormat().headingLevel();
             if (level <= 0) {
@@ -80,7 +84,7 @@ void TocModel::rebuild() {
             }
             auto node = std::make_unique<Node>();
             node->text = block.text();
-            node->slug = slugifyHeading(node->text);
+            node->slug = disambiguator.nextSlug(node->text);
             node->level = level;
             node->parent = stack.back();
             Node* raw = node.get();
